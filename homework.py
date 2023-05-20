@@ -8,6 +8,8 @@ import requests
 import telegram
 from dotenv import load_dotenv
 
+from exceptions import FailedRequest, NoHomework
+
 load_dotenv()
 
 
@@ -50,7 +52,7 @@ def check_tokens() -> None:
                     f'Отсутствует обязательная переменная окружения: '
                     f'{variable}'
                 )
-    except Exception as error:
+    except EnvironmentError as error:
         logger.critical(f'{error}.\n>>> Программа принудительно остановлена.')
         exit(1)
     logger.info('Переменные доступны. OK')
@@ -64,6 +66,7 @@ def send_message(bot, message) -> None:
         logger.debug(f'Бот отправил сообщение:\n>>> {message}')
     except Exception as error:
         logger.error(f'Сообщение отправить не удалось:\n>>> {error}')
+    return 'sent'
 
 
 def get_api_answer(timestamp):
@@ -75,10 +78,10 @@ def get_api_answer(timestamp):
     except requests.RequestException:
         raise ConnectionError(
             f'Эндпоинт [{ENDPOINT}] недоступен.\n'
-            f'>>> Нет соединения с сервером.'
+            '>>> Нет соединения с сервером.'
         )
     if response.status_code != HTTPStatus.OK:
-        raise Exception(
+        raise FailedRequest(
             f'Эндпоинт [{ENDPOINT}] недоступен.\n'
             f'>>> Код ответа API: [{response.status_code}].'
         )
@@ -89,18 +92,18 @@ def get_api_answer(timestamp):
 def check_response(response):
     """Проверка ответа API на соответствие документации."""
     logger.debug(check_response.__doc__)
-    if type(response) != dict:
+    if not isinstance(response, dict):
         raise TypeError(
             'Ответ не соответствует ожидаемому типу данных: <type no dict>'
         )
     if 'homeworks' not in response:
         raise KeyError('Ответ не содержит ключа "homeworks"')
-    if type(response['homeworks']) != list:
+    if not isinstance(response['homeworks'], list):
         raise TypeError(
             'Ответ не соответствует ожидаемому типу данных: <type no list>'
         )
     if len(response['homeworks']) == 0:
-        return None
+        raise NoHomework('Список домашних работ пуст.')
     logger.info('Ответ API соответствует документации. OK')
     return response['homeworks'][0]
 
@@ -110,15 +113,21 @@ def parse_status(homework) -> str:
     logger.debug(parse_status.__doc__)
     try:
         status = homework['status']
+    except KeyError:
+        raise KeyError('Нет ключа "status"')
+    try:
         homework_name = homework['homework_name']
+    except KeyError:
+        raise KeyError('Нет ключа "homework_name"')
+    try:
         verdict = HOMEWORK_VERDICTS[f'{status}']
-        logger.info('Статус извлечен. OK')
-        return (
-            f'Изменился статус проверки работы "{homework_name}".\n'
-            f'>>> {verdict}'
-        )
-    except Exception:
+    except KeyError:
         raise KeyError(f'Неожиданный статус домашней работы: {status}')
+    logger.info('Статус извлечен. OK')
+    return (
+        f'Изменился статус проверки работы "{homework_name}".\n'
+        f'>>> {verdict}'
+    )
 
 
 def main():
@@ -135,26 +144,24 @@ def main():
         try:
             response = get_api_answer(timestamp)
             homework = check_response(response)
-            if not homework:
-                logger.info('Список домашних работ пуст.')
-                continue
             message = parse_status(homework)
             if message == last_msg.get('message'):
                 logger.info('Обновлений нет!')
                 continue
-            last_msg['message'] = message
             send_message(bot, message)
+            if 'sent':
+                last_msg['message'] = message
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
             if message == last_msg.get('error'):
                 continue
-            last_msg['error'] = message
             send_message(bot, message)
+            if 'sent':
+                last_msg['error'] = message
 
         finally:
-            print('')
             time.sleep(RETRY_PERIOD)
 
 
