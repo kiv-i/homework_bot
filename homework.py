@@ -49,7 +49,7 @@ def check_tokens() -> None:
         for variable in REQUIRED_ENV_VARS:
             if not globals().get(f'{variable}'):
                 raise EnvironmentError(
-                    f'Отсутствует обязательная переменная окружения: '
+                    'Отсутствует обязательная переменная окружения: '
                     f'{variable}'
                 )
     except EnvironmentError as error:
@@ -58,15 +58,15 @@ def check_tokens() -> None:
     logger.info('Переменные доступны. OK')
 
 
-def send_message(bot, message) -> None:
+def send_message(bot, message):
     """Отправка сообщения в Telegram чат."""
     logger.debug(send_message.__doc__)
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logger.debug(f'Бот отправил сообщение:\n>>> {message}')
+        return True
     except Exception as error:
         logger.error(f'Сообщение отправить не удалось:\n>>> {error}')
-    return 'sent'
 
 
 def get_api_answer(timestamp):
@@ -85,8 +85,14 @@ def get_api_answer(timestamp):
             f'Эндпоинт [{ENDPOINT}] недоступен.\n'
             f'>>> Код ответа API: [{response.status_code}].'
         )
+    try:
+        response = response.json()
+    except TypeError:
+        raise TypeError(
+            'Ответ не соответствует ожидаемому типу данных: <type no JSON>'
+        )
     logger.info('Эндпоинт доступен. OK')
-    return response.json()
+    return response
 
 
 def check_response(response):
@@ -149,7 +155,7 @@ def main():
                 logger.info('Обновлений нет!')
                 continue
             send_message(bot, message)
-            if 'sent':
+            if send_message:
                 last_msg['message'] = message
 
         except Exception as error:
@@ -158,7 +164,7 @@ def main():
             if message == last_msg.get('error'):
                 continue
             send_message(bot, message)
-            if 'sent':
+            if send_message:
                 last_msg['error'] = message
 
         finally:
