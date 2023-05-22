@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from http import HTTPStatus
+from json import JSONDecodeError
 
 import requests
 import telegram
@@ -87,9 +88,12 @@ def get_api_answer(timestamp):
         )
     try:
         response = response.json()
-    except TypeError:
-        raise TypeError(
-            'Ответ не соответствует ожидаемому типу данных: <type no JSON>'
+    except JSONDecodeError as error:
+        raise JSONDecodeError(
+            'Ответ не соответствует ожидаемому типу данных: <type no JSON>\n'
+            f'>>> {error.msg}',
+            error.doc,
+            error.pos,
         )
     logger.info('Эндпоинт доступен. OK')
     return response
@@ -154,8 +158,7 @@ def main():
             if message == last_msg.get('message'):
                 logger.info('Обновлений нет!')
                 continue
-            send_message(bot, message)
-            if send_message:
+            if send_message(bot, message):
                 last_msg['message'] = message
 
         except Exception as error:
@@ -163,8 +166,7 @@ def main():
             logger.error(message)
             if message == last_msg.get('error'):
                 continue
-            send_message(bot, message)
-            if send_message:
+            if send_message(bot, message):
                 last_msg['error'] = message
 
         finally:
